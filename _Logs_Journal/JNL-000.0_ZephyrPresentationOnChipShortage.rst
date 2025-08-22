@@ -1,0 +1,350 @@
+#################################################
+Designing With Zephyr For HW Chip Shortage
+#################################################
+
+
+*********
+Scope
+*********
+
+This is where I research what I need to write a good device tree for the RIOC.
+
+
+***********
+Road Map
+***********
+
+I already started a device tree intro and the toc tree of everything related to
+device tree will be found there.
+
+* Start with the zephyr intro
+* look at example, and nxp presentation 2
+*
+
+
+*********************
+Inspiration
+*********************
+
+What really Unlocks the interoperability of Code and HW
+=============================================================
+
+With the zephyr project, interoperability is enabled thanks to 
+
+* modular hw design Golioth folk use for design
+
+    * .. image:: /Wiki_Embedded_Systems/_images/GoliothPresentation_ModulesusedForInternchage.png
+        
+* device tree
+* there are some exception:
+    
+    * The folks in Golioth presentation, showed that snippet of code:
+      to illustrate an instance they have to change c code based on
+      hardware.
+
+      For that instance they were developing with an nrf52 chip that doesn't have
+      internect connectivity, so they use an esp32 as an ``at-command`` modem that
+      they load like a pre-compiled ``at`` library and the 2 device talks back and
+      forth like an old-school dial up modem would on a printer port on your historic
+      computer.
+
+        .. code-block:: c
+           :caption: some conditionals for specialized code (Ethernet, DHCP, ESP32 as AT modem)
+
+           if (IS_ENABLED(CONFIG_GOLIOTH_SAMPLE_WIFI)) {
+                LOG_INF("Connectiong to WiFi");
+                wifi_connect();
+           }
+
+           #if IS_ENABLED(CONFIG_NET_L2_ETHERNET)
+           if (!IS_ENABLED(CONFIG_WIFI_ESP32))
+           {
+                LOG_INF("Connection to Ethernet");
+                struct net_if *iface;
+                iface = net_if_get_default();
+                net_dhcpv4_start(iface);
+           }
+           #endif
+        
+        * With that configuration, they can just run the wifi connect command
+          to get things going wether using wifi or ethernet.
+
+            * when using ethernet, they found they need to handle dhcp so that's
+              why the 2 blocks of code shown are gated with macros so when you say
+              build for that board, it's going to pull in those
+              macros and unblock the block. 
+
+* Golioth have a board catalog that can show you what board is supported in zephyr
+* For a board that is already supported in zephyr, you target those with a combination
+  of a ``.conf`` file and ``.overlay`` for each different board type in your
+  project directory.
+
+* inside of zephyr, nrf52840(ethernet) and stm32f405 has full board support in
+  zephyr.
+    
+    * so for those board, you don't need to define any of the pins or necessarily
+      their functions because they are already mapped out.
+    
+    * however for ESP32 there isn't. There isn't a feather board file in zephyr
+      so you'll have to do a little bit of extra work
+
+
+* Golioth folks also talked about the <board>.conf files (12:30 mark)
+
+    * example shown:
+      
+      .. code-block:: c
+         :caption: boards/adafruit_feather_nrf52840.conf
+
+         CONFIG_SPI=y
+         CONFIG_NET_L2_ETHERNET=y
+         CONFIG_ETH_W5500=y
+         CONFIG_ETH_W5500_TIMEOUT=1000
+         CONFIG_NET_DHCPV4=y
+
+         CONFIG_GPIO=y
+         CONFIG_I2C=y
+
+         CONFIG_UART_CONSOLE=n
+         CONFIG_RTT_CONSOLE=y
+         CONFIG_USE_SEGGER_RTT=y
+    
+    * This file show that you want to include like i2c, spi library. For the nrf52840,
+      they turn on the ethernet chip with the .conf file.
+
+        * once you turn these things on, you don't even need to run specialized
+          command.
+        
+            * exception exist like shown earlier with the sample code where
+              in code, you have to tell zephyr get the an ip address using the 
+              dhcp library. 
+
+* Golioth folks also show the /boards/circuitdojo_feather_nrf9160_ns.overlay
+
+    * the snippet:
+        
+        .. code-block:: c
+           :caption: boards/circuitdojo_feather_nrf9160_ns.overlay
+
+           &i2c1 {
+                bme280@76 {
+                    compatible = "bosch,bme280";
+                    reg = <0x76>;
+                    label = "BME280_I2C";
+                };
+            };
+
+        * this snippet shows how to add a temperature pressure humidity sensor
+          connected to i2c1.
+
+        * because the board file is already in zephyr it knows like where the pins
+          are for that and how how it's hooked up and what those pi states are.
+
+* Golioth folks also show what trick they use when they have a board that is not
+  fully supported supported:
+    
+    1. Use overlay files to remap for board variations
+
+        .. code-block:: c
+           :linenos:
+           :emphasize-lines: 5-6
+           
+           &i2c0 {
+                status = "okay";
+                clock-frequency = <I2C_BITRATE_STANDARD>;
+                sda-pin = <23>;
+                scl-pin = <22>;
+
+                bme280@76 {
+                    compatible = "bosch,bme280";
+                    reg = <0x76>;
+                    label = "BME280_I2C";
+                };
+            };
+
+        * this snippet, line 5-6 shows how they were able to remap the i2c bus
+          pins.
+
+            * They are camping on top of the esp32 generalized definition here but
+              for the the feather form faction, the pins are in a different place,
+              so they remap those.
+
+
+    2. or you can define your own DTS files for custom boards.
+  
+
+    * Once you get to all thing that will connect up to your microcontroller, then
+      those also go into these overlay files.
+
+* (14:29) They also talk for sensors and add-ons, it can get cumbersome
+
+    * sensor, 420, ethernet modules
+        
+        * BME280 weather sensor (built-in)
+        * W5500 Ethernet module (built-in)
+        * AW9523 i2c port expander (direct)
+
+        * these face plates themself talk to i2c, spi. There is an eeprom.
+
+            * they (folks at Golioth) consider this as a module or shield that would
+              go on top of the board. So You can take and and make a file that
+              specifies each faceplate and has everything self contained, but they
+              don't recommend that.
+    
+    * Scenario:
+
+        * They have 4 different microcontroller board.
+          
+          .. image:: /Wiki_Embedded_Systems/_images/GoliothZephyrPresentation_sensoron4diffmicro.png
+
+        * they want to add the same light intensity sensor on all of them.
+            
+            * 2 out of the board, using i2c0.
+            * the sensors need an interrupt line.
+
+                * every one of the board has the interrupt line on a different pin
+                  and some of them on a different port.
+
+                  so you have to specify for each one. So you'll have to this 4
+                  times. 4 overlay for each board.
+
+                * Sensors need to be added to the overlay file for every microcontroller variant:
+
+    
+    * Solution: Zephyr use the arduino header paradigm. the nrf52840dk has an example.
+
+        .. image:: /Wiki_Embedded_Systems/_images/GoliothZephyrPresentation_sensoron4diffmicroPinHeadersSolution.png
+
+        * they define the headers and they are basically giving an alias to the pin
+          functions in each of the pins.
+        
+        * with this paradigm, you can make your own shield overlay that says use the arduino pins,
+          then Zephyr when it build will map those back to it.
+
+            * the exception to the rule: the arduino aliases have to be in the
+              board .dts file, the base level file that's pulled in from zephyr. but
+              you can make your own out of tree file
+        
+* The folks also talk about case study: chip shortage:
+
+    * scenario: change sensor from BME380 to ADT7420 and vice versa
+
+        * the sensors already have drivers
+
+    * Solution: all you need to do with zephyr is to change couple file
+        
+        * <yourboard>.overlay - if there are new pins
+            
+            * this might say this type of driver for your sensor is under i2c1
+        
+        * you probably will need to do a .conf file as well in order to turn on
+          the library for that new sensor. You shouldn't have to change the prj.conf
+          file since this should be a project level thing and should work for all build.
+
+        * prj.conf - if there are new settings
+
+            * this shouldn't have to change sometimes.
+
+        * main.c - or wherever calls the sensor
+
+            * this shouldn't have to change if you use aliases so you're not calling
+              node specifially. or label.
+    
+    * on HW side, when changing chi, assumptions to be made:
+
+        * you checked that you can actually buy the new sensor
+        * your chosen replacement is in tree and has the same output
+          variable like "ambient temperature"
+        
+        * take it to production, schematic, whatever. but now you have to manage
+          different versions of FW with devices already in the field?
+
+            * Golioth solution:
+
+                * use a flat tagging system to organize different hardware versions.
+
+                    * things like: rev-a have sensor a, rev-b board have sensor b
+
+                    * Great for targeting firmware update.
+
+                        * this firmware goes to rev-a, that one go to rev-b.
+
+* they then talk about case 2: switch board. 
+    
+    * Scenario: going to a conference, a board that have no ethernet but they use
+      the Sparfun thing plus - for stm32 for ethernet, the h/w module is sold out,
+      you can swap the adafruit feather nrf52840 Express to Sparfun stm32f405 thing+
+      either way.
+
+      * those chips are fully supported on zephyr.
+      * even if you can find a board, they are just a bunch of pins with specification,
+        you can do the same thing for your own feather board.
+
+        * <yourboard>.conf file
+        * , overlay to mapping the pin, 
+        * no need to change c-code because zephyr abstract all that out.
+
+* case: a custom board that is not in the zephyr project, then make your own
+  out-of-tree board.
+    
+    * an example of that exist under zephyr/samples/application_development
+
+* then they go over about some advice about HW production:
+    
+    * You have this big board to build driven by cost, space, and power.
+
+        * you don't have to design it that way yet.
+        * you create a mental block of what each interface of the big board is.
+        * each interface represents a block on a finish product
+        * so you create a block (schematic), some block can be in a feather board
+          form factor.
+
+          * with that you can take a larger platform and break it down and use that
+            for development for future product.
+
+* then they go over lessons learned:
+
+    * plan for the worst.
+    * Zephy'rs abstracted interfaces allows HW and fw engineer to react to problems
+      in the supply chain.
+
+
+************************ 
+Things to keep in Mind
+************************
+
+according to this `"one code base, multiple target" video blog by Jared Wolff`_
+
+* In a device tree, there can be board/architecture specific properties.
+
+    * ``dmas``
+    * ``gpios``
+
+* STM32:
+
+    * Requires DMA for ASYNC UART to work
+    * DMA requires manual configuration within your overaly
+    * Different phandles since it's a different process/HAL
+
+
+when building:
+
+* choose your target!
+
+    * Make sure it's supported by both Zephyr and the sample you're trying to build
+    * Or, create your own board definition
+
+* Make sure that between building for different platforms you do a pristine build
+  with the ``-p`` flag.
+
+
+
+**************
+Reference
+**************
+
+
+
+
+.. _"one code base, multiple target" video blog by Jared Wolff: https://www.youtube.com/watch?v=DH4TKi8JERg
+.. _"What Chip Shortage? Use Zephyr for Modular Hardware" by Mike S and Chris Gammell: https://www.youtube.com/watch?v=BLoFdQpBgzs&t=434s

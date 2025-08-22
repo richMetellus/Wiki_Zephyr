@@ -1,0 +1,43 @@
+############################################
+Zephyr Out tree Board Porting for RIOC
+############################################
+
+
+when adding a board you need to:
+
+Follow the zephyr Board porting guide
+
+1. Create a directory from your repo or the zephyr repo
+   
+    .. code-block:: console
+       :caption: board creation
+       
+       # from  <manifest-repo>
+       $ mkdir -p ./boards/<ARCH>/<boardName>
+       # example: from rioc-embedded repo; $ mkdir -p ./boards/arm/tkriob
+
+
+2. Under that directory there are some mandatory files:
+    
+    1. ``Kconfig.board``
+
+        * this will allow your board to be included in the list of options
+
+    2. ``Kconfig.defconfig``
+
+        * board specific values for Kconfig options
+
+    * The first 2 options, allow zephyr to know the board definition. The board name,
+      soc family and series of that board.
+
+    3. <boardname>_defconfig, ex ``tkriob_defconfig``
+
+        * A Kconfig fragment that is merged as-is into the final build directory 
+          ``.config`` whenever an application is compiled for your board
+        
+        * In that file you put options like ARM, the board you're building.
+
+            * you list what type of hardware-related software components that
+              your board provided (UAART, Serial, Console, GPIO)
+
+  

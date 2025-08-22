@@ -1,0 +1,603 @@
+.. _zephyrBasedApplicationOverview:
+
+################################
+Zephyr Based Application
+################################
+
+
+***********
+Scope
+***********
+
+This is where I research how to structure an external repository in order to
+create a zephyr application with some custom board, libraries.
+
+
+*****************
+Road Map
+*****************
+
+In order to really understand how to created zephyr based application, I follow
+these steps:
+
+1. Try to understand a zephyr app skeleton
+   
+    * understand West Workspace topology, the jargon and west
+    * Play with the zephyr example-application project example.
+
+2. Understand how to create your own application by looking at the 
+   `zephyr documentation on creating an Application <https://docs.zephyrproject.org/3.1.0/develop/application/index.html#creating-an-application>`_
+
+    i. Explore and understand the content of the <repo>/app/CMakeList.txt
+        
+        * This help to determine how to include an app as part of the zephyr build system
+        * For this it is important to get some familiarity the cmake tools.
+            
+            * I have started documenting how to understand cmake as part of this 
+              knowledge building; :ref:`CMake Overview <CMakeOverview>`
+    
+    #. Explore and understand the content of <repo>/zephyr/module.yml
+        
+        * This is the zephyr standard of marking a west project as a module.
+        * The documentation i found useful are `Zephyr Modules`_, the *Module yaml
+          file description* section.
+
+    
+    #. Understand what is a Kconfig and what goes in it
+    #. Understand how to make your <repo> the manifest repo using the zephyr 
+       west.yml
+        
+        i. understand the west schema syntax. (what goes into west.yml)
+            
+            * see the `West Manifests <https://docs.zephyrproject.org/latest/develop/west/manifest.html>`_
+      
+   #. View some more examples on zephyr app on github
+       
+       * search github using their advanced search feature by looking for any
+         repository that contain the path ``/zephyr`` and file ``module.yml``
+       
+       * I found the nrfconnect/sdk-nrf repo to be very useful.
+
+
+
+*************************************************
+Zephyr App Skeleton | Zephyr Application Type
+*************************************************
+
+
+|
+|
+
+three basic types of Zephyr application based on where
+:file:`<app>` is located:
+
+* Zephyr repository application
+
+  * like all the sample code that exist in zephyr such as hello world.
+    
+    .. code-block:: none
+
+       zephyrproject/
+       ├─── .west/
+       │    └─── config
+       └─── zephyr/
+            ├── arch/
+            ├── boards/
+            ├── cmake/
+            ├── samples/
+            │    ├── hello_world/
+            │    └── ...
+            ├── tests/
+            └── ...
+
+
+* Zephyr workspace application: 
+
+  * An application located within a west workspace, but outside
+    the zephyr repository itself, is referred to as a Zephyr workspace application.
+
+    .. code-block:: none
+
+       zephyrproject/
+       ├─── .west/
+       │    └─── config
+       ├─── zephyr/
+       ├─── bootloader/
+       ├─── modules/
+       ├─── tools/
+       ├─── <vendor/private-repositories>/
+       └─── applications/
+            └── app/
+  
+  * ``example-application`` template is zephyr workspace application, with T2 topology.
+
+
+* Zephyr freestanding application:
+
+  * A Zephyr application located outside of a Zephyr west workspace
+    
+    .. code-block:: none
+
+       <home>/
+       ├─── zephyrproject/
+       │     ├─── .west/
+       │     │    └─── config
+       │     ├── zephyr/
+       │     ├── bootloader/
+       │     ├── modules/
+       │     └── ...
+       │
+       └─── app/
+            ├── CMakeLists.txt
+            ├── prj.conf
+            └── src/
+                └── main.c
+                
+    
+.. grid:: 2
+   
+   .. grid-item::
+
+      T2: Star topology, application is the manifest repository
+      ===========================================================
+       
+       **T2: Star topology, application is the manifest repository**
+
+       - Useful for those focused on a single application
+       - A repository containing a Zephyr application acts as the central repository
+         and names other projects required to build it in its :file:`west.yml`. This
+         includes the zephyr repository and any modules.
+       - Analogy with existing mechanisms: Git submodules with the application as
+         the super-project, zephyr and other projects as submodules
+       
+       A workspace using this topology looks like this:
+       
+       .. code-block:: none
+       
+          west-workspace/
+          │
+          ├── application/         # .git/     │
+          │   ├── CMakeLists.txt               │
+          │   ├── prj.conf                     │  never modified by west
+          │   ├── src/                         │
+          │   │   └── main.c                   │
+          │   └── west.yml         # main manifest with optional import(s) and override(s)
+          │                                    │
+          ├── modules/
+          │   └── lib/
+          │       └── zcbor/       # .git/ project from either the main manifest or some import.
+          │
+          └── zephyr/              # .git/ project
+              └── west.yml         # This can be partially imported with lower precedence or ignored.
+                                   # Only the 'manifest-rev' version can be imported.
+          
+          .. note:: this is the topology used by :ref:`the zephyr application template <west_zephyrApplicationTemplate>`.
+       
+   .. grid-item::
+
+       T3: Forest topology
+       =====================
+       
+       **T3: Forest topology**
+
+       - Useful for those supporting multiple independent applications or downstream
+         distributions with no "central" repository
+       - A dedicated manifest repository which contains no Zephyr source code,
+         and specifies a list of projects all at the same "level"
+       - Analogy with existing mechanisms: Google repo-based source distribution
+       
+       A workspace using this topology looks like this:
+       
+       .. code-block:: none
+       
+          west-workspace/
+          ├── app1/               # .git/ project
+          │   ├── CMakeLists.txt
+          │   ├── prj.conf
+          │   └── src/
+          │       └── main.c
+          ├── app2/               # .git/ project
+          │   ├── CMakeLists.txt
+          │   ├── prj.conf
+          │   └── src/
+          │       └── main.c
+          ├── manifest-repo/      # .git/ never modified by west
+          │   └── west.yml        # main manifest with optional import(s) and override(s)
+          ├── modules/
+          │   └── lib/
+          │       └── zcbor/      # .git/ project from either the main manifest or
+          │                       #       from some import
+          │
+          └── zephyr/             # .git/ project
+              └── west.yml        # This can be partially imported with lower precedence or ignored.
+                                  # Only the 'manifest-rev' version can be imported.
+
+.. _west_zephyrApplicationTemplate:
+
+.. grid:: 2
+   
+   .. grid-item::
+      
+      Zephyr application example template
+
+      * This is a zephyr workspace application.
+        
+        * ``my-workspace`` is the west topdir and west workspace
+        * ``example-application`` is the manifest repository. 
+
+      .. code-block:: none
+         
+         ricky-wsl@Rich-LenovExtX1:PersonalWorkspace/Repos/zephyr-application-template(main)$ tree
+         .
+         ├── CMakeLists.txt
+         ├── Kconfig
+         ├── LICENSE
+         ├── README.md
+         ├── app
+         │  ├── CMakeLists.txt
+         │  ├── Kconfig
+         │  ├── app_version.h.in
+         │  ├── boards
+         │  │  └── nucleo_f302r8.overlay
+         │  ├── debug.conf
+         │  ├── prj.conf
+         │  ├── rtt.conf
+         │  └── src
+         │      └── main.c
+         ├── boards
+         │  └── arm
+         │      └── custom_plank
+         │          ├── Kconfig
+         │          ├── Kconfig.board
+         │          ├── Kconfig.defconfig
+         │          ├── README.md
+         │          ├── board.cmake
+         │          ├── custom_plank-pinctrl.dtsi
+         │          ├── custom_plank.dts
+         │          ├── custom_plank.yaml
+         │          └── custom_plank_defconfig
+         ├── drivers
+         │  ├── CMakeLists.txt
+         │  ├── Kconfig
+         │  └── sensor
+         │      ├── CMakeLists.txt
+         │      ├── Kconfig
+         │      └── examplesensor
+         │          ├── CMakeLists.txt
+         │          ├── Kconfig
+         │          └── examplesensor.c
+         ├── dts
+         │  └── bindings
+         │      └── sensor
+         │          └── zephyr,examplesensor.yaml
+         ├── include
+         │  └── custom_lib
+         │      └── custom_lib.h
+         ├── lib
+         │  ├── CMakeLists.txt
+         │  ├── Kconfig
+         │  └── custom_lib
+         │      ├── CMakeLists.txt
+         │      ├── Kconfig
+         │      └── custom_lib.c
+         ├── scripts
+         │  ├── example_west_command.py
+         │  └── west-commands.yml
+         ├── tests
+         │  └── lib
+         │      └── custom_lib
+         │          ├── CMakeLists.txt
+         │          ├── prj.conf
+         │          ├── src
+         │          │  └── main.c
+         │          └── testcase.yaml
+         ├── west.yml
+         └── zephyr
+             └── module.yml
+         
+   .. grid-item::
+      
+      Zephyr application example template after 
+      
+      * ``west update``
+
+        * The template is the same after west update. 
+
+      * after ``west build`` 
+        
+        * When you build the app using ``west build`` from the template directory,
+          a **build** folder will be created.
+        
+        * Since this use a T2 West Workspace topology: 
+          the Zephyr application, ``example-application`` is the manifest repository
+
+          * From the zephyr document Basics Workspace concept, 
+            
+            * Every west workspace contains exactly one manifest repository, 
+              which is a Git repository containing a manifest file.
+
+              * The manifest file is named ``west.yml`` by default; this can 
+                be overridden using the ``manifest.file`` local configuration option.
+              
+              * you can configure west to use any Git repository in the workspace 
+                as the manifest repository. The only requirement is that it 
+                contains a valid manifest file
+              
+              * It appears that the folder structure matters as west have some
+                topology supported.
+              
+        
+***********************************************       
+Understand How to Structure Zephyr Project
+***********************************************
+
+
+**Road map**
+
+In order to understand how to structure such workspace,
+
+* I explored the example-application.
+
+  * my journal entry on that can be found at this reference 
+    :ref:`GG0041 Build External Hosted Zephyr app <zephyr_example-application_Journal-entry>`
+
+* Get familiar with the `Basics about West <https://docs.zephyrproject.org/latest/develop/west/basics.html>`_
+
+  * This will help me **know the language/jargon of west and zephyr-based application**.
+
+    * *west* - a zephyr meta-tool
+      
+      * can manage multiple repository (kinda like git submodules and google repo tool)
+      * can be used to invoked the zephyr build system (cmake) 
+        
+      * can be extended to include more sub-commands.
+      * west built-in commands allows
+
+        * build a zephyr application
+        * flashing a board
+        * debugging.
+      
+      * West is **NOT** a build system, although it is an utility (client) that
+        can interface with a build system by associating a ``command`` to it.
+
+        
+    * *projects* or *west project* -> git repositories managed by west
+
+      * type of projects:
+
+        * modules -> external project
+
+          * e.g zcbor under ``my-workspace/modules/lib/zcbor``
+
+          * modules and project are conceptually different
+
+            * **module repository include a ``module.yml`` in a ``zephyr/`` folder
+              at the root of the repository.**
+            
+            * so ``zephyr/module.yml`` should exist in order for the git repository
+              (project) to be considered as a zephyr module.
+
+              * so ``example-application`` is a zephyr module then.
+            
+            * Modules are repositories that contain a ``zephyr/module.yml`` file, 
+              so that the Zephyr build system can pull in the source code 
+              from the repository.
+            
+            * West projects are entries in the projects: 
+              section in the ``west.yml`` manifest file
+
+              * West projects are often also modules, but not always.
+
+                * in the ``my-workspace``, 
+                  
+                  * ``my-workspace/zephyr`` is a west project, not a module.
+                  * ``my-workspace/example-application`` is a west project that
+                    also happen to be a module.
+                
+                
+      
+      * zephyr build system (cmake, ninja) uses west to get the location of all
+        projects.
+      
+    * *Workspace* or *west workspace* -> a directory managed by west that contains 
+      different git repositories (Projects)
+
+      * contains the ``.west`` folder
+
+      * e.g ``my-workspace`` in the zephyr example-application. 
+
+        * 3 type of workspace or workspace topology supported by west:
+
+          * T1, T2, T3
+      
+      * ``my-workspace`` is the name of the workspace, that is the zephyr topdir
+        as this directory is the one containing the ``.west`` folder.
+    
+        .. code-block:: console
+           
+           rmetellus@UbuntuZephyrVM:~/Workspace/Repos/ExternalRepos/my-workspace/example-application(main)$ west topdir
+           /home/rmetellus/Workspace/Repos/ExternalRepos/my-workspace
+    
+    * *manifest repository* -> repository containing a manifest file (``west.yml``
+       is default manifest file name)
+
+      * Every west workspace **contains exactly one manifest repository**, which 
+        is a Git repository containing a *manifest file*
+      
+      * the ``example-application`` was the manifest repo in that case even though
+        in the workspace the zephyr/ folder has a west.yml
+      
+      * **the manifest repository will have the build directory created there**
+    
+    * *manifest file*
+
+      * a yaml file name ``west.yml`` by default
+        
+        * can use a file called ``manifest.file`` to override 
+
+#. I stumbled into nrfconnect/sdk-nrf, the way this project is structure
+   is similar to the zephyr-rtos/example-application 
+   
+   * The repo can be viewed on `nrfconnect github <https://github.com/nrfconnect/sdk-nrf/tree/main>`
+
+      * this repo has a structure that shows how to include multiple application
+        inside the repo.
+      
+      * How to use overlays
+      * this repo also shows how to work with different flavors of the Zephyr project.
+        using different set of manifest files.
+
+        * according to `this youtube video 7'52 mark <https://www.youtube.com/watch?v=DH4TKi8JERg>`_
+      
+      * nrf with their sdk is just another flavor of zephyr project.
+   
+   * There is also another repo `intel/ecfw <https://github.com/intel/ecfw-zephyr>`_
+       
+       * This repo include example on how to apply:
+           
+           * zephyr patch
+           * custom linker section.
+
+#. Creating BSP for microcontrollers inspirations:
+    
+    * I use github to search for c, code containing the bsp keyword and I came
+      across this `sparkfun apollo 3 repo <https://github.com/sparkfun/SparkFun_Apollo3_AmbiqSuite_BSPs/blob/master/artemis_module/bsp/am_bsp.h>`
+        
+        * This repo is a great one to view to figure out pin configuration, 
+          and how to define your bsp layers for a small microcontroller.
+        * This has a similar structure to HPM/LPM JDES structure.
+
+*******************
+Skeleton For RIOC
+*******************
+
+As part of TK RIOC Design I think the skeleton might start to be like this:
+
+
+   .. code-block:: console
+      :linenos:
+
+      rmetellus@UbuntuZephyrVM:~/zephyr-rioc-workspace/rioc-embedded(main)$ tree -a -I ".git"
+      .
+      ├── apps
+      │   └── tkrioc
+      │       ├── CMakeLists.txt
+      │       ├── prj.conf
+      │       └── src
+      │           └── main.c
+      ├── boards
+      │   └── arm
+      │       └── tkriob
+      │           ├── tkriob.dts
+      │           ├── tkriob.dtsi
+      │           └── tkriob-revA.dtsi
+      ├── bsp
+      │   ├── CMakeLists.txt
+      │   ├── drivers
+      │   │   ├── Kconfig
+      │   │   └── README.rst
+      │   └── led
+      │       └── status_led_hw_defines.h
+      ├── cmake
+      │   └── tkrio_version.cmake
+      ├── CMakeLists.txt
+      ├── common
+      │   ├── README.rst
+      │   └── tkrio_version.h.in
+      ├── dts
+      │   └── bindings
+      │       └── README.rst
+      ├── .gitignore
+      ├── include
+      │   └── bsp
+      │       ├── led
+      │       └── README.rst
+      ├── Kconfig.tkrio
+      ├── lib
+      │   ├── CMakeLists.txt
+      │   └── README.rst
+      ├── west.yml
+      └── zephyr
+          └── module.yml
+      
+      18 directories, 22 files
+              
+ 
+
+.. collapse:: Directory With .git included:
+
+   .. code-block:: console
+      
+      rmetellus@UbuntuZephyrVM:~/Workspace/Repos/InternalRepos/RIOC-embedded$ tree -a .
+      .
+      ├── app-rioc
+      │   ├── CMakeLists.txt
+      │   └── src
+      │       └── main.c
+      ├── boards
+      │   └── arm
+      │       └── tkriob
+      ├── bsp
+      │   └── drivers
+      ├── CMakeLists.txt
+      ├── common
+      │   ├── CMakeLists.txt
+      │   ├── README.rst
+      │   └── version.h.in
+      ├── doc
+      ├── .git
+      │   ├── branches
+      │   ├── config
+      │   ├── description
+      │   ├── HEAD
+      │   ├── hooks
+      │   │   ├── applypatch-msg.sample
+      │   │   ├── commit-msg.sample
+      │   │   ├── fsmonitor-watchman.sample
+      │   │   ├── post-update.sample
+      │   │   ├── pre-applypatch.sample
+      │   │   ├── pre-commit.sample
+      │   │   ├── pre-merge-commit.sample
+      │   │   ├── prepare-commit-msg.sample
+      │   │   ├── pre-push.sample
+      │   │   ├── pre-rebase.sample
+      │   │   ├── pre-receive.sample
+      │   │   ├── push-to-checkout.sample
+      │   │   └── update.sample
+      │   ├── index
+      │   ├── info
+      │   │   └── exclude
+      │   ├── objects
+      │   │   ├── 01
+      │   │   │   └── 20efc7f103d031bf9d4dc062aa5b3ecdac82fa
+      │   │   ├── 1a
+      │   │   │   └── 29f105daad10c840712b44b264edfead1c3319
+      │   │   ├── 84
+      │   │   │   └── 90245ecde95d8073c94b487fdb0bc1c9e64014
+      │   │   ├── e6
+      │   │   │   └── 9de29bb2d1d6434b8b29ae775ad8c2e48c5391
+      │   │   ├── info
+      │   │   └── pack
+      │   └── refs
+      │       ├── heads
+      │       └── tags
+      ├── include
+      │   ├── bsp
+      │   └── common
+      ├── lib
+      └── test
+      
+      28 directories, 28 files   
+     
+
+**************************
+References/Inspirations
+**************************
+
+* .. _Zephyr Modules: https://docs.zephyrproject.org/latest/develop/modules.html#modules
+
+Inspiration:
+
+* `Zephyr-rtos example-application template on github <https://github.com/zephyrproject-rtos/example-application>`_
+* `Zephyr project T3 topology <https://docs.zephyrproject.org/latest/develop/west/workspaces.html#t3-forest-topology3>`_
+* `Zephyr Application Development <https://docs.zephyrproject.org/3.1.0/develop/application/index.html>`_
