@@ -1,5 +1,15 @@
-Topic Template Title 
-###################################
+Zephyr Project 
+###############
+
+
+
+.. toctree::
+   :caption: General
+   :glob:
+   :numbered:
+   :maxdepth: 1
+
+   Zephyr-*
 
 .. only:: personal
 
@@ -18,7 +28,7 @@ Courses
 *********
 
 .. toctree::
-    :caption: Journal
+    :caption: Course List
     :glob:
     :numbered:
     :maxdepth: 1
